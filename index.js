@@ -5,6 +5,9 @@ const cors = require("cors");
 const multer = require("multer");
 const { S3Client } = require("@aws-sdk/client-s3");
 const { Upload } = require("@aws-sdk/lib-storage");
+const { GetObjectCommand } = require("@aws-sdk/client-s3");
+const readline = require("readline");
+const stream = require("stream");
 
 const app = express();
 app.use(express.json());
@@ -104,12 +107,81 @@ app.post("/process/:fileKey", async (req, res) => {
       status: "PENDING",
     });
 
-    // TODO: We will trigger the worker here in the next step
+    processQueue();
   } catch (error) {
     console.error("Job Creation Error:", error);
     res.status(500).json({ error: "Could not create job" });
   }
 });
+
+let isProcessing = false;
+
+async function processQueue() {
+  if (isProcessing) return;
+  isProcessing = true;
+
+  try {
+    const job = await Job.findOne({ status: "PENDING" }).sort({ createdAt: 1 });
+
+    if (!job) {
+      console.log("No jobs waiting.");
+      isProcessing = false;
+      return;
+    }
+
+    console.log(`Starting Job: ${job.fileKey}`);
+
+    job.status = "PROCESSING";
+    await job.save();
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: job.fileKey,
+    });
+    const s3Item = await s3.send(command);
+
+    const fileStream = s3Item.Body;
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
+
+    let batch = [];
+    let lineCount = 0;
+
+    for await (const line of rl) {
+      if (line.trim()) {
+        batch.push({
+          content: line,
+          originalFile: job.fileKey,
+        });
+        lineCount++;
+      }
+
+      if (batch.length >= 1000) {
+        await FileData.insertMany(batch);
+        batch = [];
+      }
+    }
+
+    if (batch.length > 0) {
+      await FileData.insertMany(batch);
+    }
+
+    job.status = "COMPLETED";
+    await job.save();
+    console.log(`Job Completed: ${job.fileKey} (${lineCount} lines processed)`);
+  } catch (error) {
+    console.error("Job Failed:", error);
+    await Job.updateOne(
+      { status: "PROCESSING" },
+      { status: "FAILED", error: error.message }
+    );
+  } finally {
+    isProcessing = false;
+    processQueue();
+  }
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
