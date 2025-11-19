@@ -25,9 +25,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI);
-    console.log("✅ MongoDB Connected successfully");
+    console.log("MongoDB Connected successfully");
   } catch (err) {
-    console.error("❌ MongoDB Connection Error:", err.message);
+    console.error("MongoDB Connection Error:", err.message);
     process.exit(1);
   }
 };
@@ -37,7 +37,26 @@ app.get("/", (req, res) => {
   res.send("Server is running and healthy!");
 });
 
-// THE UPLOAD ROUTE
+const JobSchema = new mongoose.Schema({
+  fileKey: { type: String, required: true },
+  status: {
+    type: String,
+    enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"],
+    default: "PENDING",
+  },
+  createdAt: { type: Date, default: Date.now },
+  error: String,
+});
+
+const Job = mongoose.model("Job", JobSchema);
+
+const FileDataSchema = new mongoose.Schema({
+  content: String,
+  originalFile: String,
+});
+
+const FileData = mongoose.model("FileData", FileDataSchema);
+
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -71,7 +90,28 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
+app.post("/process/:fileKey", async (req, res) => {
+  try {
+    const { fileKey } = req.params;
+
+    const newJob = await Job.create({
+      fileKey: fileKey,
+    });
+
+    res.json({
+      message: "Job created successfully",
+      jobId: newJob._id,
+      status: "PENDING",
+    });
+
+    // TODO: We will trigger the worker here in the next step
+  } catch (error) {
+    console.error("Job Creation Error:", error);
+    res.status(500).json({ error: "Could not create job" });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
