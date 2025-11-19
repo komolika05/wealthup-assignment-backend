@@ -52,6 +52,19 @@ This is a backend system built with Node.js and Express designed to handle high-
   }
   ```
 
+### 3. Check Job Status
+
+**GET** `/status/:jobId`
+
+- **Description:** Check the current status of a background job.
+- **Response:**
+  ```json
+  {
+    "fileKey": "...",
+    "status": "COMPLETED"
+  }
+  ```
+
 ## Setup & Installation
 
 ### Local Development
