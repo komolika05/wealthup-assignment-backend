@@ -114,6 +114,24 @@ app.post("/process/:fileKey", async (req, res) => {
   }
 });
 
+// Endpoint to check job status
+app.get("/status/:jobId", async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    const job = await Job.findById(jobId);
+
+    if (!job) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    res.json(job);
+  } catch (error) {
+    console.error("Status Check Error:", error);
+    res.status(500).json({ error: "Could not fetch status" });
+  }
+});
+
 let isProcessing = false;
 
 async function processQueue() {
